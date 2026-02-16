@@ -26,7 +26,9 @@
       "eaggus@verizon.net",
       "tjaggus@verizon.net"
     ],
-    "tags": []
+    "tags": [
+      "Social Committee"
+    ]
   },
   {
     "id": 3,
@@ -178,7 +180,9 @@
     "emails": [
       "jdella1984@gmail.com"
     ],
-    "tags": []
+    "tags": [
+      "Social Committee"
+    ]
   },
   {
     "id": 14,
@@ -221,7 +225,9 @@
       "loudyke@hotmail.com",
       "keith_dyke@hotmail.com"
     ],
-    "tags": []
+    "tags": [
+      "Social Committee"
+    ]
   },
   {
     "id": 17,
@@ -466,7 +472,9 @@
     "emails": [
       "wksmorris@comcast.net"
     ],
-    "tags": []
+    "tags": [
+      "Social Committee"
+    ]
   },
   {
     "id": 34,
@@ -510,19 +518,6 @@
     "tags": []
   },
   {
-    "id": 37,
-    "surname": "PIECKO",
-    "names": "Jill",
-    "address": "51 Sportsman Blvd",
-    "phones": [
-      "609-651-6502"
-    ],
-    "emails": [
-      "jillpiecko@verizon.net"
-    ],
-    "tags": []
-  },
-  {
     "id": 38,
     "surname": "PELLIZZARI",
     "names": "Mary John",
@@ -547,6 +542,19 @@
     ],
     "emails": [
       "susanpennica1@gmail.com"
+    ],
+    "tags": []
+  },
+  {
+    "id": 37,
+    "surname": "PIECKO",
+    "names": "Jill",
+    "address": "51 Sportsman Blvd",
+    "phones": [
+      "609-651-6502"
+    ],
+    "emails": [
+      "jillpiecko@verizon.net"
     ],
     "tags": []
   },
