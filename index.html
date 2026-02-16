@@ -70,8 +70,19 @@
 <div id="root"></div>
 <script type="text/babel">
 const { useState, useEffect, useMemo, useCallback } = React;
-const VIEWER_PASSWORD = "Vintage@Hamilton";
-const ADMIN_PASSWORD = "Vintage@Hamilton.Admin";
+
+// Password hashes (SHA-256) - actual passwords cannot be read from source
+const VIEWER_HASH = "b6d37b2f37626a083fcae5694269a9d59e03adc35cb1c9db4bd66f86108df80d";
+const ADMIN_HASH = "8138379a995e95d09473cf2e29a02dff82f9293ae954a847942666b5856d35ae";
+
+// SHA-256 hash function using Web Crypto API
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 function App() {
   const [auth, setAuth] = useState(null);
   const [data, setData] = useState([]);
@@ -83,21 +94,199 @@ function App() {
   const [toast, setToast] = useState(null);
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState("");
-  useEffect(() => { fetch("data.json").then(r => r.json()).then(d => setData(d)).catch(() => { console.log("Could not load data.json"); }); }, []);
+  const [isChecking, setIsChecking] = useState(false);
+
+  useEffect(() => {
+    fetch("data.json").then(r => r.json()).then(d => setData(d)).catch(() => { console.log("Could not load data.json"); });
+  }, []);
+
   const showToast = useCallback((msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); }, []);
-  const allTags = useMemo(() => { const tags = new Set(); data.forEach(entry => entry.tags && entry.tags.forEach(t => tags.add(t))); return Array.from(tags).sort(); }, [data]);
-  const filteredData = useMemo(() => { let result = data; if (tagFilter) { result = result.filter(e => e.tags && e.tags.includes(tagFilter)); } if (search.trim()) { const q = search.toLowerCase().trim(); result = result.filter(entry => { if (searchField === "name" || searchField === "all") { if ((entry.surname + " " + entry.names).toLowerCase().includes(q)) return true; } if (searchField === "address" || searchField === "all") { if (entry.address.toLowerCase().includes(q)) return true; } if (searchField === "tag" || searchField === "all") { if (entry.tags && entry.tags.some(t => t.toLowerCase().includes(q))) return true; } return false; }); } return result.sort((a, b) => a.surname.localeCompare(b.surname)); }, [data, search, searchField, tagFilter]);
-  const handleLogin = (e) => { e.preventDefault(); if (passwordInput === ADMIN_PASSWORD) { setAuth("admin"); setLoginError(""); } else if (passwordInput === VIEWER_PASSWORD) { setAuth("viewer"); setLoginError(""); } else { setLoginError("Incorrect password. Please try again."); } setPasswordInput(""); };
+
+  const allTags = useMemo(() => {
+    const tags = new Set();
+    data.forEach(entry => entry.tags && entry.tags.forEach(t => tags.add(t)));
+    return Array.from(tags).sort();
+  }, [data]);
+
+  const filteredData = useMemo(() => {
+    let result = data;
+    if (tagFilter) { result = result.filter(e => e.tags && e.tags.includes(tagFilter)); }
+    if (search.trim()) {
+      const q = search.toLowerCase().trim();
+      result = result.filter(entry => {
+        if (searchField === "name" || searchField === "all") { if ((entry.surname + " " + entry.names).toLowerCase().includes(q)) return true; }
+        if (searchField === "address" || searchField === "all") { if (entry.address.toLowerCase().includes(q)) return true; }
+        if (searchField === "tag" || searchField === "all") { if (entry.tags && entry.tags.some(t => t.toLowerCase().includes(q))) return true; }
+        return false;
+      });
+    }
+    return result.sort((a, b) => a.surname.localeCompare(b.surname));
+  }, [data, search, searchField, tagFilter]);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    setIsChecking(true);
+    try {
+      const hash = await sha256(passwordInput);
+      if (hash === ADMIN_HASH) { setAuth("admin"); setLoginError(""); }
+      else if (hash === VIEWER_HASH) { setAuth("viewer"); setLoginError(""); }
+      else { setLoginError("Incorrect password. Please try again."); }
+    } catch (err) { setLoginError("Error verifying password."); }
+    setPasswordInput("");
+    setIsChecking(false);
+  };
+
   const handleLogout = () => { setAuth(null); setSearch(""); setTagFilter(""); };
-  const handleSaveEntry = (entry) => { const newData = data.map(e => e.id === entry.id ? entry : e); setData(newData); setEditingEntry(null); showToast("Entry updated successfully"); };
-  const handleAddEntry = (entry) => { const maxId = data.reduce((max, e) => Math.max(max, e.id), 0); setData([...data, { ...entry, id: maxId + 1 }]); setShowAddModal(false); showToast("New entry added successfully"); };
-  const handleDeleteEntry = (id) => { if (confirm("Are you sure you want to remove this entry?")) { setData(data.filter(e => e.id !== id)); showToast("Entry removed"); } };
-  const handleExportData = () => { const json = JSON.stringify(data, null, 2); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "data.json"; a.click(); URL.revokeObjectURL(url); showToast("Data exported as data.json"); };
-  if (!auth) { return (<div><div className="header"><div className="header-content"><h1>Vintage at Hamilton<span>Community Directory</span></h1></div></div><div className="login-container"><div className="login-card"><div className="logo">\u{1F3E1}</div><h2>Welcome</h2><p>Enter the community password to access the directory.</p><form onSubmit={handleLogin}><div className="form-group"><input type="password" placeholder="Enter password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} autoFocus /></div>{loginError && <p className="error-msg">{loginError}</p>}<button type="submit" className="btn btn-primary" style={{width:'100%', padding:'0.7rem', fontSize:'1rem', marginTop:'0.5rem'}}>Sign In</button></form></div></div></div>); }
-  return (<div><div className="header"><div className="header-content"><h1>Vintage at Hamilton<span>Community Directory &mdash; {data.length} Households</span></h1><div className="header-actions">{auth === "admin" && <span className="admin-badge">ADMIN</span>}{auth === "admin" && (<><button className="btn btn-primary" onClick={() => setShowAddModal(true)}>+ Add Entry</button><button className="btn btn-secondary" onClick={handleExportData}>Export JSON</button></>)}<button className="btn btn-secondary" onClick={handleLogout}>Sign Out</button></div></div></div><div className="container"><div className="search-bar"><input type="text" placeholder="Search residents..." value={search} onChange={e => setSearch(e.target.value)} /><select value={searchField} onChange={e => setSearchField(e.target.value)}><option value="all">All Fields</option><option value="name">Name</option><option value="address">Address</option><option value="tag">Tag / Role</option></select>{allTags.length > 0 && (<div className="filter-tags"><span style={{fontSize:'0.8rem',color:'var(--text-light)',marginRight:'0.3rem'}}>Tags:</span>{allTags.map(tag => (<span key={tag} className={"filter-tag " + (tagFilter === tag ? "active" : "")} onClick={() => setTagFilter(tagFilter === tag ? "" : tag)}>{tag}</span>))}{tagFilter && (<span className="filter-tag" onClick={() => setTagFilter("")} style={{color:'var(--danger)'}}>Clear</span>)}</div>)}<span className="stats">Showing {filteredData.length} of {data.length}</span></div><div className="directory-grid">{filteredData.map(entry => (<ResidentCard key={entry.id} entry={entry} auth={auth} onEdit={() => setEditingEntry({...entry})} onDelete={() => handleDeleteEntry(entry.id)} />))}{filteredData.length === 0 && (<div style={{gridColumn:'1/-1',textAlign:'center',padding:'3rem',color:'var(--text-light)'}}>No residents found matching your search.</div>)}</div></div>{editingEntry && (<EntryModal entry={editingEntry} onSave={handleSaveEntry} onClose={() => setEditingEntry(null)} title="Edit Entry" />)}{showAddModal && (<EntryModal entry={{id:0, surname:"", names:"", address:"", phones:[""], emails:[""], tags:[]}} onSave={handleAddEntry} onClose={() => setShowAddModal(false)} title="Add New Entry" />)}{toast && <div className="toast">{toast}</div>}</div>);
+
+  const handleSaveEntry = (entry) => {
+    const newData = data.map(e => e.id === entry.id ? entry : e);
+    setData(newData); setEditingEntry(null); showToast("Entry updated successfully");
+  };
+
+  const handleAddEntry = (entry) => {
+    const maxId = data.reduce((max, e) => Math.max(max, e.id), 0);
+    setData([...data, { ...entry, id: maxId + 1 }]); setShowAddModal(false); showToast("New entry added successfully");
+  };
+
+  const handleDeleteEntry = (id) => {
+    if (confirm("Are you sure you want to remove this entry?")) { setData(data.filter(e => e.id !== id)); showToast("Entry removed"); }
+  };
+
+  const handleExportData = () => {
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "data.json"; a.click(); URL.revokeObjectURL(url);
+    showToast("Data exported as data.json");
+  };
+
+  if (!auth) {
+    return (
+      <div>
+        <div className="header"><div className="header-content"><h1>Vintage at Hamilton<span>Community Directory</span></h1></div></div>
+        <div className="login-container">
+          <div className="login-card">
+            <div className="logo">{"\u{1F3E1}"}</div>
+            <h2>Welcome</h2>
+            <p>Enter the community password to access the directory.</p>
+            <form onSubmit={handleLogin}>
+              <div className="form-group">
+                <input type="password" placeholder="Enter password" value={passwordInput} onChange={e => setPasswordInput(e.target.value)} autoFocus disabled={isChecking} />
+              </div>
+              {loginError && <p className="error-msg">{loginError}</p>}
+              <button type="submit" className="btn btn-primary" style={{width:'100%', padding:'0.7rem', fontSize:'1rem', marginTop:'0.5rem'}} disabled={isChecking}>
+                {isChecking ? "Verifying..." : "Sign In"}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="header">
+        <div className="header-content">
+          <h1>Vintage at Hamilton<span>Community Directory &mdash; {data.length} Households</span></h1>
+          <div className="header-actions">
+            {auth === "admin" && <span className="admin-badge">ADMIN</span>}
+            {auth === "admin" && (<><button className="btn btn-primary" onClick={() => setShowAddModal(true)}>+ Add Entry</button><button className="btn btn-secondary" onClick={handleExportData}>Export JSON</button></>)}
+            <button className="btn btn-secondary" onClick={handleLogout}>Sign Out</button>
+          </div>
+        </div>
+      </div>
+      <div className="container">
+        <div className="search-bar">
+          <input type="text" placeholder="Search residents..." value={search} onChange={e => setSearch(e.target.value)} />
+          <select value={searchField} onChange={e => setSearchField(e.target.value)}>
+            <option value="all">All Fields</option><option value="name">Name</option><option value="address">Address</option><option value="tag">Tag / Role</option>
+          </select>
+          {allTags.length > 0 && (
+            <div className="filter-tags">
+              <span style={{fontSize:'0.8rem',color:'var(--text-light)',marginRight:'0.3rem'}}>Tags:</span>
+              {allTags.map(tag => (<span key={tag} className={"filter-tag " + (tagFilter === tag ? "active" : "")} onClick={() => setTagFilter(tagFilter === tag ? "" : tag)}>{tag}</span>))}
+              {tagFilter && (<span className="filter-tag" onClick={() => setTagFilter("")} style={{color:'var(--danger)'}}>Clear</span>)}
+            </div>
+          )}
+          <span className="stats">Showing {filteredData.length} of {data.length}</span>
+        </div>
+        <div className="directory-grid">
+          {filteredData.map(entry => (<ResidentCard key={entry.id} entry={entry} auth={auth} onEdit={() => setEditingEntry({...entry})} onDelete={() => handleDeleteEntry(entry.id)} />))}
+          {filteredData.length === 0 && (<div style={{gridColumn:'1/-1',textAlign:'center',padding:'3rem',color:'var(--text-light)'}}>No residents found matching your search.</div>)}
+        </div>
+      </div>
+      {editingEntry && (<EntryModal entry={editingEntry} onSave={handleSaveEntry} onClose={() => setEditingEntry(null)} title="Edit Entry" />)}
+      {showAddModal && (<EntryModal entry={{id:0, surname:"", names:"", address:"", phones:[""], emails:[""], tags:[]}} onSave={handleAddEntry} onClose={() => setShowAddModal(false)} title="Add New Entry" />)}
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
 }
-function ResidentCard({ entry, auth, onEdit, onDelete }) { return (<div className="resident-card"><div className="name">{entry.surname}</div><div className="names-sub">{entry.names}</div><div className="detail"><span className="icon">\u{1F4CD}</span><span className="value">{entry.address}</span></div>{entry.phones && entry.phones.length > 0 && (<div className="detail"><span className="icon">\u{1F4DE}</span><span className="value">{entry.phones.join(" / ")}</span></div>)}{entry.emails && entry.emails.length > 0 && (<div className="detail"><span className="icon">\u{2709}\u{FE0F}</span><span className="value">{entry.emails.map((em, i) => (<span key={i}><a href={"mailto:"+em} style={{color:'var(--primary)',textDecoration:'none'}}>{em}</a>{i < entry.emails.length - 1 ? " / " : ""}</span>))}</span></div>)}{entry.tags && entry.tags.length > 0 && (<div className="tags-container">{entry.tags.map((tag, i) => (<span key={i} className="tag">{tag}</span>))}</div>)}{auth === "admin" && (<div className="card-actions"><button className="btn btn-outline btn-sm" onClick={onEdit}>Edit</button><button className="btn btn-danger btn-sm" onClick={onDelete}>Remove</button></div>)}</div>); }
-function EntryModal({ entry, onSave, onClose, title }) { const [form, setForm] = useState({...entry}); const [newTag, setNewTag] = useState(""); const updateField = (field, value) => { setForm(prev => ({...prev, [field]: value})); }; const updateArrayField = (field, index, value) => { const arr = [...form[field]]; arr[index] = value; setForm(prev => ({...prev, [field]: arr})); }; const addArrayItem = (field) => { setForm(prev => ({...prev, [field]: [...prev[field], ""]})); }; const removeArrayItem = (field, index) => { const arr = form[field].filter((_, i) => i !== index); setForm(prev => ({...prev, [field]: arr.length ? arr : [""]})); }; const addTag = () => { if (newTag.trim() && !form.tags.includes(newTag.trim())) { setForm(prev => ({...prev, tags: [...prev.tags, newTag.trim()]})); setNewTag(""); } }; const removeTag = (tag) => { setForm(prev => ({...prev, tags: prev.tags.filter(t => t !== tag)})); }; const handleSubmit = (e) => { e.preventDefault(); if (!form.surname.trim() || !form.names.trim()) { alert("Surname and Names are required."); return; } const cleaned = { ...form, phones: form.phones.filter(p => p.trim()), emails: form.emails.filter(e => e.trim()) }; if (cleaned.phones.length === 0) cleaned.phones = []; if (cleaned.emails.length === 0) cleaned.emails = []; onSave(cleaned); }; const handleTagKeyDown = (e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } }; return (<div className="modal-overlay" onClick={onClose}><div className="modal" onClick={e => e.stopPropagation()}><h3>{title}</h3><form onSubmit={handleSubmit}><div className="form-group"><label>Surname *</label><input value={form.surname} onChange={e => updateField('surname', e.target.value.toUpperCase())} required /></div><div className="form-group"><label>First Names *</label><input value={form.names} onChange={e => updateField('names', e.target.value)} required /></div><div className="form-group"><label>Address</label><input value={form.address} onChange={e => updateField('address', e.target.value)} /></div><div className="form-group"><label>Phone Numbers</label>{form.phones.map((phone, i) => (<div key={i} style={{display:'flex',gap:'0.3rem',marginBottom:'0.3rem'}}><input value={phone} onChange={e => updateArrayField('phones', i, e.target.value)} placeholder="Phone number" />{form.phones.length > 1 && (<button type="button" className="btn btn-danger btn-sm" onClick={() => removeArrayItem('phones', i)}>-</button>)}</div>))}<button type="button" className="btn btn-outline btn-sm" onClick={() => addArrayItem('phones')} style={{marginTop:'0.3rem'}}>+ Phone</button></div><div className="form-group"><label>Email Addresses</label>{form.emails.map((email, i) => (<div key={i} style={{display:'flex',gap:'0.3rem',marginBottom:'0.3rem'}}><input value={email} onChange={e => updateArrayField('emails', i, e.target.value)} placeholder="Email address" type="email" />{form.emails.length > 1 && (<button type="button" className="btn btn-danger btn-sm" onClick={() => removeArrayItem('emails', i)}>-</button>)}</div>))}<button type="button" className="btn btn-outline btn-sm" onClick={() => addArrayItem('emails')} style={{marginTop:'0.3rem'}}>+ Email</button></div><div className="form-group"><label>Tags / Roles</label><div className="tag-input-row"><input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={handleTagKeyDown} placeholder="e.g. Social Committee" /><button type="button" className="btn btn-outline btn-sm" onClick={addTag}>Add</button></div>{form.tags.length > 0 && (<div className="existing-tags">{form.tags.map((tag, i) => (<span key={i} className="tag-removable">{tag}<button type="button" onClick={() => removeTag(tag)}>&times;</button></span>))}</div>)}</div><div style={{display:'flex',gap:'0.5rem',marginTop:'1.5rem'}}><button type="submit" className="btn btn-success" style={{flex:1}}>Save</button><button type="button" className="btn btn-secondary" onClick={onClose} style={{flex:1,color:'var(--text)',background:'var(--bg)'}}>Cancel</button></div></form></div></div>); }
+
+function ResidentCard({ entry, auth, onEdit, onDelete }) {
+  return (
+    <div className="resident-card">
+      <div className="name">{entry.surname}</div>
+      <div className="names-sub">{entry.names}</div>
+      <div className="detail"><span className="icon">{"\u{1F4CD}"}</span><span className="value">{entry.address}</span></div>
+      {entry.phones && entry.phones.length > 0 && (<div className="detail"><span className="icon">{"\u{1F4DE}"}</span><span className="value">{entry.phones.join(" / ")}</span></div>)}
+      {entry.emails && entry.emails.length > 0 && (<div className="detail"><span className="icon">{"\u{2709}\u{FE0F}"}</span><span className="value">{entry.emails.map((em, i) => (<span key={i}><a href={"mailto:"+em} style={{color:'var(--primary)',textDecoration:'none'}}>{em}</a>{i < entry.emails.length - 1 ? " / " : ""}</span>))}</span></div>)}
+      {entry.tags && entry.tags.length > 0 && (<div className="tags-container">{entry.tags.map((tag, i) => (<span key={i} className="tag">{tag}</span>))}</div>)}
+      {auth === "admin" && (<div className="card-actions"><button className="btn btn-outline btn-sm" onClick={onEdit}>Edit</button><button className="btn btn-danger btn-sm" onClick={onDelete}>Remove</button></div>)}
+    </div>
+  );
+}
+
+function EntryModal({ entry, onSave, onClose, title }) {
+  const [form, setForm] = useState({...entry});
+  const [newTag, setNewTag] = useState("");
+  const updateField = (field, value) => { setForm(prev => ({...prev, [field]: value})); };
+  const updateArrayField = (field, index, value) => { const arr = [...form[field]]; arr[index] = value; setForm(prev => ({...prev, [field]: arr})); };
+  const addArrayItem = (field) => { setForm(prev => ({...prev, [field]: [...prev[field], ""]})); };
+  const removeArrayItem = (field, index) => { const arr = form[field].filter((_, i) => i !== index); setForm(prev => ({...prev, [field]: arr.length ? arr : [""]})); };
+  const addTag = () => { if (newTag.trim() && !form.tags.includes(newTag.trim())) { setForm(prev => ({...prev, tags: [...prev.tags, newTag.trim()]})); setNewTag(""); } };
+  const removeTag = (tag) => { setForm(prev => ({...prev, tags: prev.tags.filter(t => t !== tag)})); };
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!form.surname.trim() || !form.names.trim()) { alert("Surname and Names are required."); return; }
+    const cleaned = { ...form, phones: form.phones.filter(p => p.trim()), emails: form.emails.filter(e => e.trim()) };
+    if (cleaned.phones.length === 0) cleaned.phones = [];
+    if (cleaned.emails.length === 0) cleaned.emails = [];
+    onSave(cleaned);
+  };
+  const handleTagKeyDown = (e) => { if (e.key === "Enter") { e.preventDefault(); addTag(); } };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h3>{title}</h3>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group"><label>Surname *</label><input value={form.surname} onChange={e => updateField('surname', e.target.value.toUpperCase())} required /></div>
+          <div className="form-group"><label>First Names *</label><input value={form.names} onChange={e => updateField('names', e.target.value)} required /></div>
+          <div className="form-group"><label>Address</label><input value={form.address} onChange={e => updateField('address', e.target.value)} /></div>
+          <div className="form-group"><label>Phone Numbers</label>
+            {form.phones.map((phone, i) => (<div key={i} style={{display:'flex',gap:'0.3rem',marginBottom:'0.3rem'}}><input value={phone} onChange={e => updateArrayField('phones', i, e.target.value)} placeholder="Phone number" />{form.phones.length > 1 && (<button type="button" className="btn btn-danger btn-sm" onClick={() => removeArrayItem('phones', i)}>-</button>)}</div>))}
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => addArrayItem('phones')} style={{marginTop:'0.3rem'}}>+ Phone</button>
+          </div>
+          <div className="form-group"><label>Email Addresses</label>
+            {form.emails.map((email, i) => (<div key={i} style={{display:'flex',gap:'0.3rem',marginBottom:'0.3rem'}}><input value={email} onChange={e => updateArrayField('emails', i, e.target.value)} placeholder="Email address" type="email" />{form.emails.length > 1 && (<button type="button" className="btn btn-danger btn-sm" onClick={() => removeArrayItem('emails', i)}>-</button>)}</div>))}
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => addArrayItem('emails')} style={{marginTop:'0.3rem'}}>+ Email</button>
+          </div>
+          <div className="form-group"><label>Tags / Roles</label>
+            <div className="tag-input-row"><input value={newTag} onChange={e => setNewTag(e.target.value)} onKeyDown={handleTagKeyDown} placeholder="e.g. Social Committee" /><button type="button" className="btn btn-outline btn-sm" onClick={addTag}>Add</button></div>
+            {form.tags.length > 0 && (<div className="existing-tags">{form.tags.map((tag, i) => (<span key={i} className="tag-removable">{tag}<button type="button" onClick={() => removeTag(tag)}>&times;</button></span>))}</div>)}
+          </div>
+          <div style={{display:'flex',gap:'0.5rem',marginTop:'1.5rem'}}>
+            <button type="submit" className="btn btn-success" style={{flex:1}}>Save</button>
+            <button type="button" className="btn btn-secondary" onClick={onClose} style={{flex:1,color:'var(--text)',background:'var(--bg)'}}>Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 ReactDOM.render(<App />, document.getElementById("root"));
 </script>
 </body>
