@@ -64,6 +64,39 @@
   .filter-tag { padding: 0.25rem 0.6rem; border-radius: 12px; font-size: 0.8rem; cursor: pointer; border: 1px solid var(--border); background: white; transition: all 0.2s; }
   .filter-tag:hover { border-color: var(--primary); } .filter-tag.active { background: var(--primary); color: white; border-color: var(--primary); }
   @media (max-width: 640px) { .header-content { flex-direction: column; align-items: flex-start; } .directory-grid { grid-template-columns: 1fr; } .search-bar { flex-direction: column; } .stats { margin-left: 0; } .modal { padding: 1.5rem; } }
+
+  /* Print Dialog Styles */
+  .print-modal { text-align: center; }
+  .print-modal h3 { margin-bottom: 0.5rem; }
+  .print-modal p { color: var(--text-light); font-size: 0.9rem; margin-bottom: 1.5rem; }
+  .print-options { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
+  .print-option { display: flex; align-items: center; gap: 0.75rem; padding: 1rem; border: 2px solid var(--border); border-radius: 10px; cursor: pointer; transition: all 0.2s; text-align: left; background: white; }
+  .print-option:hover { border-color: var(--primary); background: var(--tag-bg); }
+  .print-option.selected { border-color: var(--primary); background: var(--tag-bg); }
+  .print-option .print-icon { font-size: 1.5rem; flex-shrink: 0; }
+  .print-option .print-label { font-weight: 600; font-size: 0.95rem; color: var(--text); }
+  .print-option .print-desc { font-size: 0.8rem; color: var(--text-light); margin-top: 2px; }
+
+  /* Print Styles */
+  @media print {
+    body { background: white !important; color: black !important; font-size: 11pt; }
+    .header, .search-bar, .card-actions, .header-actions, .admin-badge, .toast, .modal-overlay, .no-print { display: none !important; }
+    .container { max-width: 100% !important; margin: 0 !important; padding: 0 !important; }
+    .print-header { display: block !important; text-align: center; margin-bottom: 12pt; padding-bottom: 8pt; border-bottom: 2pt solid #2c5f2d; }
+    .print-header h1 { font-size: 18pt; color: #2c5f2d !important; margin: 0; }
+    .print-header p { font-size: 10pt; color: #666 !important; margin: 4pt 0 0 0; }
+    .print-table { display: table !important; width: 100%; border-collapse: collapse; font-size: 9pt; }
+    .print-table thead { display: table-header-group !important; }
+    .print-table th { background: #2c5f2d !important; color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; padding: 6pt 8pt; text-align: left; font-weight: 600; font-size: 9pt; }
+    .print-table td { padding: 5pt 8pt; border-bottom: 0.5pt solid #ddd; vertical-align: top; font-size: 9pt; }
+    .print-table tr:nth-child(even) td { background: #f5f5f5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .print-table .name-cell { font-weight: 600; white-space: nowrap; }
+    .print-table .names-cell { color: #555; }
+    .print-footer { display: block !important; text-align: center; font-size: 8pt; color: #999; margin-top: 12pt; padding-top: 8pt; border-top: 0.5pt solid #ccc; }
+    .directory-grid, .resident-card { display: none !important; }
+    @page { margin: 0.5in; size: landscape; }
+  }
+  .print-header, .print-table, .print-footer { display: none; }
 </style>
 </head>
 <body>
@@ -95,6 +128,8 @@ function App() {
   const [passwordInput, setPasswordInput] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isChecking, setIsChecking] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
+  const [printMode, setPrintMode] = useState(null); // null, 'all', or 'filtered'
 
   useEffect(() => {
     fetch("data.json").then(r => r.json()).then(d => setData(d)).catch(() => { console.log("Could not load data.json"); });
@@ -161,6 +196,24 @@ function App() {
     showToast("Data exported as data.json");
   };
 
+  const handlePrint = (mode) => {
+    setPrintMode(mode);
+    setShowPrintModal(false);
+  };
+
+  const printData = useMemo(() => {
+    if (printMode === 'filtered') return filteredData;
+    if (printMode === 'all') return [...data].sort((a, b) => a.surname.localeCompare(b.surname));
+    return [];
+  }, [printMode, data, filteredData]);
+
+  useEffect(() => {
+    if (printMode && printData.length > 0) {
+      const timer = setTimeout(() => { window.print(); setPrintMode(null); }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [printMode, printData]);
+
   if (!auth) {
     return (
       <div>
@@ -193,6 +246,7 @@ function App() {
           <div className="header-actions">
             {auth === "admin" && <span className="admin-badge">ADMIN</span>}
             {auth === "admin" && (<><button className="btn btn-primary" onClick={() => setShowAddModal(true)}>+ Add Entry</button><button className="btn btn-secondary" onClick={handleExportData}>Export JSON</button></>)}
+            <button className="btn btn-secondary" onClick={() => setShowPrintModal(true)}>{"\u{1F5A8}\u{FE0F}"} Print</button>
             <button className="btn btn-secondary" onClick={handleLogout}>Sign Out</button>
           </div>
         </div>
@@ -219,6 +273,54 @@ function App() {
       </div>
       {editingEntry && (<EntryModal entry={editingEntry} onSave={handleSaveEntry} onClose={() => setEditingEntry(null)} title="Edit Entry" />)}
       {showAddModal && (<EntryModal entry={{id:0, surname:"", names:"", address:"", phones:[""], emails:[""], tags:[]}} onSave={handleAddEntry} onClose={() => setShowAddModal(false)} title="Add New Entry" />)}
+      {showPrintModal && (
+        <div className="modal-overlay" onClick={() => setShowPrintModal(false)}>
+          <div className="modal print-modal" onClick={e => e.stopPropagation()}>
+            <h3>{"\u{1F5A8}\u{FE0F}"} Print Directory</h3>
+            <p>Choose what to print:</p>
+            <div className="print-options">
+              <div className="print-option" onClick={() => handlePrint('all')}>
+                <span className="print-icon">{"\u{1F4CB}"}</span>
+                <div>
+                  <div className="print-label">Full Directory</div>
+                  <div className="print-desc">Print all {data.length} households</div>
+                </div>
+              </div>
+              <div className="print-option" onClick={() => handlePrint('filtered')}>
+                <span className="print-icon">{"\u{1F50D}"}</span>
+                <div>
+                  <div className="print-label">Current View</div>
+                  <div className="print-desc">Print {filteredData.length} household{filteredData.length !== 1 ? 's' : ''} matching your current search/filter</div>
+                </div>
+              </div>
+            </div>
+            <button className="btn btn-secondary" onClick={() => setShowPrintModal(false)} style={{color:'var(--text)',background:'var(--bg)',width:'100%'}}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {printMode && (
+        <div>
+          <div className="print-header">
+            <h1>Vintage at Hamilton &mdash; Community Directory</h1>
+            <p>{printMode === 'filtered' && (search || tagFilter) ? 'Filtered: ' + [search && ('Search: "' + search + '"'), tagFilter && ('Tag: ' + tagFilter)].filter(Boolean).join(', ') + ' \u2014 ' : ''}{printData.length} Household{printData.length !== 1 ? 's' : ''} &bull; Printed {new Date().toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'})}</p>
+          </div>
+          <table className="print-table">
+            <thead><tr><th>Surname</th><th>Names</th><th>Address</th><th>Phone(s)</th><th>Email(s)</th></tr></thead>
+            <tbody>
+              {printData.map(entry => (
+                <tr key={entry.id}>
+                  <td className="name-cell">{entry.surname}</td>
+                  <td className="names-cell">{entry.names}</td>
+                  <td>{entry.address}</td>
+                  <td>{entry.phones ? entry.phones.join(', ') : ''}</td>
+                  <td>{entry.emails ? entry.emails.join(', ') : ''}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="print-footer">Vintage at Hamilton Community Directory &bull; Confidential &mdash; For Resident Use Only</div>
+        </div>
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
