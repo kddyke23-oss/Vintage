@@ -97,6 +97,20 @@
     @page { margin: 0.5in; size: landscape; }
   }
   .print-header, .print-table, .print-footer { display: none; }
+
+  /* Select Mode Styles */
+  .select-bar { background: var(--primary); color: white; padding: 0.75rem 1.5rem; border-radius: 10px; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+  .select-bar .select-count { font-weight: 600; font-size: 0.95rem; margin-right: auto; }
+  .select-bar .btn { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3); }
+  .select-bar .btn:hover { background: rgba(255,255,255,0.35); }
+  .select-bar .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .select-bar .btn-cancel { background: transparent; border: 1px solid rgba(255,255,255,0.4); }
+  .resident-card.selectable { cursor: pointer; position: relative; }
+  .resident-card.selectable:hover { border-left-color: var(--accent); }
+  .resident-card.selected { border-left-color: var(--accent); background: #fdfcf5; box-shadow: 0 0 0 2px var(--accent); }
+  .select-checkbox { position: absolute; top: 0.75rem; right: 0.75rem; width: 22px; height: 22px; border: 2px solid var(--border); border-radius: 4px; background: white; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+  .select-checkbox.checked { background: var(--primary); border-color: var(--primary); color: white; font-size: 0.8rem; }
+  @media print { .select-bar, .select-checkbox { display: none !important; } }
 </style>
 </head>
 <body>
@@ -129,7 +143,9 @@ function App() {
   const [loginError, setLoginError] = useState("");
   const [isChecking, setIsChecking] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
-  const [printMode, setPrintMode] = useState(null); // null, 'all', or 'filtered'
+  const [printMode, setPrintMode] = useState(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
 
   useEffect(() => {
     fetch("data.json").then(r => r.json()).then(d => setData(d)).catch(() => { console.log("Could not load data.json"); });
@@ -214,6 +230,33 @@ function App() {
     }
   }, [printMode, printData]);
 
+  const toggleSelectMode = () => { setSelectMode(!selectMode); setSelectedIds(new Set()); };
+  const toggleSelect = (id) => { setSelectedIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
+  const selectAll = () => { setSelectedIds(new Set(filteredData.map(e => e.id))); };
+  const selectNone = () => { setSelectedIds(new Set()); };
+
+  const handleEmailSelected = () => {
+    const emails = data.filter(e => selectedIds.has(e.id)).flatMap(e => e.emails || []).filter(Boolean);
+    if (emails.length === 0) { showToast("No email addresses for selected residents"); return; }
+    const unique = [...new Set(emails)];
+    window.location.href = "mailto:" + unique.join(",");
+    showToast("Opening email for " + unique.length + " address" + (unique.length !== 1 ? "es" : ""));
+  };
+
+  const handleCopyPhones = () => {
+    const phones = data.filter(e => selectedIds.has(e.id)).flatMap(e => e.phones || []).filter(Boolean);
+    if (phones.length === 0) { showToast("No phone numbers for selected residents"); return; }
+    const unique = [...new Set(phones)];
+    navigator.clipboard.writeText(unique.join("\n")).then(() => showToast("Copied " + unique.length + " phone number" + (unique.length !== 1 ? "s" : "") + " to clipboard")).catch(() => showToast("Could not copy to clipboard"));
+  };
+
+  const handleCopyEmails = () => {
+    const emails = data.filter(e => selectedIds.has(e.id)).flatMap(e => e.emails || []).filter(Boolean);
+    if (emails.length === 0) { showToast("No email addresses for selected residents"); return; }
+    const unique = [...new Set(emails)];
+    navigator.clipboard.writeText(unique.join("\n")).then(() => showToast("Copied " + unique.length + " email" + (unique.length !== 1 ? "s" : "") + " to clipboard")).catch(() => showToast("Could not copy to clipboard"));
+  };
+
   if (!auth) {
     return (
       <div>
@@ -247,6 +290,7 @@ function App() {
             {auth === "admin" && <span className="admin-badge">ADMIN</span>}
             {auth === "admin" && (<><button className="btn btn-primary" onClick={() => setShowAddModal(true)}>+ Add Entry</button><button className="btn btn-secondary" onClick={handleExportData}>Export JSON</button></>)}
             <button className="btn btn-secondary" onClick={() => setShowPrintModal(true)}>{"\u{1F5A8}\u{FE0F}"} Print</button>
+            <button className={"btn " + (selectMode ? "btn-primary" : "btn-secondary")} onClick={toggleSelectMode}>{selectMode ? "Exit Select" : "\u{2709}\u{FE0F} Select"}</button>
             <button className="btn btn-secondary" onClick={handleLogout}>Sign Out</button>
           </div>
         </div>
@@ -266,8 +310,19 @@ function App() {
           )}
           <span className="stats">Showing {filteredData.length} of {data.length}</span>
         </div>
+        {selectMode && (
+          <div className="select-bar">
+            <span className="select-count">{selectedIds.size} selected</span>
+            <button className="btn btn-sm" onClick={selectAll}>Select All</button>
+            <button className="btn btn-sm" onClick={selectNone}>Clear</button>
+            <button className="btn btn-sm" onClick={handleEmailSelected} disabled={selectedIds.size === 0}>{"\u{2709}\u{FE0F}"} Email</button>
+            <button className="btn btn-sm" onClick={handleCopyEmails} disabled={selectedIds.size === 0}>{"\u{1F4CB}"} Copy Emails</button>
+            <button className="btn btn-sm" onClick={handleCopyPhones} disabled={selectedIds.size === 0}>{"\u{1F4DE}"} Copy Phones</button>
+            <button className="btn btn-sm btn-cancel" onClick={toggleSelectMode}>Done</button>
+          </div>
+        )}
         <div className="directory-grid">
-          {filteredData.map(entry => (<ResidentCard key={entry.id} entry={entry} auth={auth} onEdit={() => setEditingEntry({...entry})} onDelete={() => handleDeleteEntry(entry.id)} />))}
+          {filteredData.map(entry => (<ResidentCard key={entry.id} entry={entry} auth={auth} onEdit={() => setEditingEntry({...entry})} onDelete={() => handleDeleteEntry(entry.id)} selectMode={selectMode} selected={selectedIds.has(entry.id)} onToggleSelect={() => toggleSelect(entry.id)} />))}
           {filteredData.length === 0 && (<div style={{gridColumn:'1/-1',textAlign:'center',padding:'3rem',color:'var(--text-light)'}}>No residents found matching your search.</div>)}
         </div>
       </div>
@@ -326,9 +381,12 @@ function App() {
   );
 }
 
-function ResidentCard({ entry, auth, onEdit, onDelete }) {
+function ResidentCard({ entry, auth, onEdit, onDelete, selectMode, selected, onToggleSelect }) {
+  const cardClass = "resident-card" + (selectMode ? " selectable" : "") + (selected ? " selected" : "");
+  const handleClick = () => { if (selectMode) onToggleSelect(); };
   return (
-    <div className="resident-card">
+    <div className={cardClass} onClick={handleClick}>
+      {selectMode && <div className={"select-checkbox" + (selected ? " checked" : "")}>{selected ? "\u2713" : ""}</div>}
       <div className="name">{entry.surname}</div>
       <div className="names-sub">{entry.names}</div>
       <div className="detail"><span className="icon">{"\u{1F4CD}"}</span><span className="value">{entry.address}</span></div>
